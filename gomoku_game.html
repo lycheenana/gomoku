@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>gomoku_game</title>
+    <style>
+        body{
+            text-align: center;
+        }
+        .btn span{
+            display: inline-block;
+            border-radius: 10px;
+            background: gray;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .btn span.restart{
+            background: orange;
+            color: #fff;
+        }
+        .btn span.show{
+            background: orange;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+<div class="resultText">五子棋</div>
+<div class="chess-wrapper">
+    <canvas id="chess" width="450px" height="450px"></canvas>
+</div>
+
+<div class="btn">
+    <span class="restart">重新开始</span>
+    <span class="back">悔棋</span>
+    <span class="cancel">撤销悔棋</span>
+</div>
+<script>
+    var chess = document.getElementById('chess');
+    var context = chess.getContext('2d');
+    var restart = document.getElementsByClassName('restart');
+    var back = document.getElementsByClassName('back');
+    var cancel = document.getElementsByClassName('cancel');
+    var result = document.getElementsByClassName('resultText');
+    var me = true;
+    var over = false;
+    var cancelAble = false;
+    var backAble = false;
+
+    // UI部分
+    // 棋盘绘制
+    var drawChessBoard = function () {
+        for (var i = 0; i < 15; i++) {
+            context.moveTo(15 + i * 30, 15);
+            context.lineTo(15 + i * 30, 435);
+            context.moveTo(15, 15 + i * 30);
+            context.lineTo(435, 15 + i * 30);
+            context.stroke();
+        }
+    }
+    drawChessBoard();
+
+    // 落子
+    var oneStep = function (i, j, me) {
+        context.beginPath();
+        context.arc(15 + i * 30, 15 + j * 30, 13, 0, 2 * Math.PI);
+        context.closePath();
+
+        var grd = context.createRadialGradient(15 + i * 30, 15 + j * 30, 13, 15 + i * 30 + 2, 15 + j * 30 - 2, 0);
+        if (me) {
+            grd.addColorStop(0, '#0a0a0a');
+            grd.addColorStop(1, '#636766');
+        } else {
+            grd.addColorStop(0, '#d1d1d1');
+            grd.addColorStop(1, '#f9f9f9');
+        }
+        context.fillStyle = grd;
+        context.fill();
+    }
+
+    // 清除棋子
+    var minusStep = function(i,j){
+        context.clearRect( i*30, j*30, 30, 30);
+
+        context.beginPath();
+        context.moveTo(i * 30 + 15 , j * 30);
+        context.lineTo(i * 30 + 15 , j * 30 + 30);
+        context.moveTo(i * 30 , j * 30 +15);
+        context.lineTo(i * 30 + 30 , j * 30 + 15);
+        context.stroke();
+    }
+
+    // 重新开始
+    restart[0].onclick = function(){
+        window.location.reload();
+    }
+
+    // 棋盘上的棋子
+    var chessBoard = [];
+    for (var i = 0; i < 15; i++) {
+        chessBoard[i] = [];
+        for (var j = 0; j < 15; j++) {
+            chessBoard[i][j] = 0
+        }
+    }
+
+    // 赢法总数
+    var count = 0;
+    // 赢法数组是一个三维数组,记录每个位置的是否存在于某种赢法排列中，存在未true，不存在为undefined
+    var wins = [];
+    for (var i = 0; i < 15; i++) {
+        wins[i] = [];
+        for (var j = 0; j < 15; j++) {
+            wins[i][j] = []
+        }
+    }
+
+    // 横线赢法
+    for (var i = 0; i < 11; i++) {
+        for (var j = 0; j < 15; j++) {
+            for (var k = 0; k < 5; k++) {
+                wins[i + k][j][count] = true; // 表示在第count种赢法中有(i,j+k)位置
+            }
+            count++;
+        }
+    }
+
+    // 竖线赢法
+    for (var i = 0; i < 15; i++) {
+        for (var j = 0; j < 11; j++) {
+            for (var k = 0; k < 5; k++) {
+                wins[i][j + k][count] = true;
+            }
+            count++;
+        }
+    }
+
+    // 正斜线赢法
+    for (var i = 0; i < 11; i++) {
+        for (var j = 0; j < 11; j++) {
+            for (var k = 0; k < 5; k++) {
+                wins[i + k][j + k][count] = true;
+            }
+            count++;
+        }
+    }
+
+    // 反斜线赢法
+    for (var i = 0; i < 11; i++) {
+        for (var j = 14; j > 4; j--) {
+            for (var k = 0; k < 5; k++) {
+                wins[i + k][j - k][count] = true;
+            }
+            count++;
+        }
+    }
+
+    // 赢法统计数组，记录某种赢法的棋子个数
+    var myWins = [];
+    var _myWins = [];
+    var computerWins = [];
+    var _computerWins = [];
+    for (var k = 0; k < count; k++) {
+        myWins[k] = 0;
+        computerWins[k] = 0;
+    }
+
+    // 我，下棋
+    var now_i, now_j;
+    chess.onclick = function (e) {
+        if (over) {
+            return;
+        }
+        if(!me){
+            return;
+        }
+        var x = e.offsetX;
+        var y = e.offsetY;
+        var i = Math.floor(x / 30);
+        var j = Math.floor(y / 30);
+
+        if (chessBoard[i][j] == 0) {
+            oneStep(i, j, true);
+            chessBoard[i][j] = 1; // 表示我已占了该位置
+            now_i = i;
+            now_j = j;
+
+            for (var k = 0; k < count; k++) {
+                if (wins[i][j][k]) {
+                    myWins[k]++;
+                    _computerWins[k] = computerWins[k];
+                    computerWins[k] = 6;
+                    if (myWins[k] == 5) {
+                        result[0].innerHTML = '恭喜你，赢得了比赛！'
+                        over = true;
+                    }
+                }
+            }
+        }
+        if(!over){
+            me = !me;
+            computerAI();
+        }
+    }
+
+    // 计算机下棋
+    var comp_i, comp_j;
+    var computerAI = function () {
+        var myScore = [];
+        var computerScore = [];
+        var max = 0;
+        var u = 0;
+        var v = 0;
+        for (var i = 0; i < 15; i++) {
+            myScore[i] = [];
+            computerScore[i] = [];
+            for (var j = 0; j < 15; j++) {
+                myScore[i][j] = 0;
+                computerScore[i][j] = 0;
+            }
+        }
+
+        // 遍历整个棋盘，找到权重最高的位置
+        for (var i = 0; i < 15; i++) {
+            for (var j = 0; j < 15; j++) {
+                if (chessBoard[i][j] == 0) {
+                    for (var k = 0; k < count; k++) {
+                        if (wins[i][j][k]) {
+                            if (myWins[k] == 1) {
+                                myScore[i][j] += 200;
+                            } else if (myWins[k] == 2) {
+                                myScore[i][j] += 400;
+                            }
+                            else if (myWins[k] == 3) {
+                                myScore[i][j] += 2000;
+                            }
+                            else if (myWins[k] == 4) {
+                                myScore[i][j] += 10000; // 赢法k,玩家已经有四颗棋了，要马上拦截，所以权重给2000
+                            }
+
+                            if (computerWins[k] == 1) {
+                                computerScore[i][j] += 220;
+                            } else if (computerWins[k] == 2) {
+                                computerScore[i][j] += 420;
+                            }
+                            else if (computerWins[k] == 3) {
+                                computerScore[i][j] += 2100;
+                            }
+                            else if (computerWins[k] == 4) {
+                                computerScore[i][j] += 20000; // 赢法k,计算机本身就有四颗棋了，这颗落完，就赢了，所以权重比前面的还高
+                            }
+                        }
+                    }
+                    if (myScore[i][j] > max) {
+                        max = myScore[i][j];
+                        u = i;
+                        v = j;
+                    } else if (myScore[i][j] == max) {
+                        if (computerScore[i][j] > computerScore[u][v]) {
+                            u = i;
+                            v = j;
+                        }
+                    }
+
+                    if (computerScore[i][j] > max) {
+                        max = computerScore[i][j];
+                        u = i;
+                        v = j;
+                    } else if (computerScore[i][j] == max) {
+                        if (myScore[i][j] > myScore[u][v]) {
+                            u = i;
+                            v = j;
+                        }
+                    }
+                }
+            }
+        }
+        oneStep(u, v, false);
+        chessBoard[u][v] = 2; // 表示计算机已占了该位置
+        comp_i = u;
+        comp_j = v;
+        for (var k = 0; k < count; k++) {
+            if (wins[u][v][k]) {
+                computerWins[k]++;
+                _myWins[k] = myWins[k];
+                myWins[k] = 6; // 玩家已经不可能通过赢法k获胜了，所以定义为一个不可能的值
+                if (computerWins[k] == 5) {
+                    result[0].innerHTML = '很遗憾，你输了！'
+                    over = true;
+                }
+            }
+        }
+        if(!over){
+            me = !me;
+        }
+        backAble = true;
+        back[0].className += ' ' + 'show';
+        cancelAble = false;
+        cancel[0].className = 'cancel';
+    }
+
+    // 悔棋
+    back[0].onclick = function(){
+        if(!backAble) return;
+        over = false;
+        me = true;
+
+        // 我，悔棋
+        minusStep(now_i, now_j);
+        chessBoard[now_i][now_j] = 0;
+        for(var k = 0; k < count; k++){
+            if(wins[now_i][now_j][k]){
+                myWins[k]--;
+                computerWins[k] = _computerWins[k];
+            }
+        }
+
+        // 计算机响应悔棋
+        minusStep(comp_i, comp_j);
+        chessBoard[comp_i][comp_j] = 0;
+        for(var k = 0; k < count; k++){
+            if(wins[comp_i][comp_j][k]){
+                computerWins[k]--;
+                myWins[k] = _myWins[k];
+            }
+        }
+        result[0].innerHTML = '五子棋';
+        cancelAble = true;
+        backAble = false;
+        cancel[0].className += ' ' + 'show';
+        back[0].className = 'back';
+    }
+
+    // 撤销悔棋
+    cancel[0].onclick = function(){
+        if(!cancelAble){
+            return;
+        }
+        // 我撤销悔棋
+        oneStep(now_i, now_j, true);
+        chessBoard[now_i][now_j] = 1;
+        for (var k = 0; k < count; k++) {
+            if (wins[i][j][k]) {
+                myWins[k]++;
+                _computerWins[k] = computerWins[k];
+                computerWins[k] = 6;
+                if (myWins[k] == 5){
+                    result[0].innerHTML = '恭喜你，赢得了比赛！'
+                    over = true;
+                }
+            }
+        }
+
+        // 计算机撤销悔棋
+        oneStep(comp_i, comp_j, false);
+        chessBoard[comp_i][comp_j] = 2;
+        for (var k = 0; k < count; k++) {
+            if (wins[comp_i][comp_j][k]) {
+                computerWins[k]++;
+                _myWins[k] = myWins[k];
+                myWins[k] = 6; // 玩家已经不可能通过赢法k获胜了，所以定义为一个不可能的值
+                if (computerWins[k] == 5) {
+                    result[0].innerHTML = '很遗憾，你输了！'
+                    over = true;
+                }
+            }
+        }
+        cancelAble = false;
+        backAble = true;
+        cancel[0].className = 'cancel';
+        back[0].className += ' ' + 'show';
+
+    }
+
+</script>
+</body>
+</html>
